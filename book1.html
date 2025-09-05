@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Mani Book Demo</title>
+  <style>
+    :root {
+      --bg: #fff;
+      --text: #000;
+      --sidebar: #f4f4f4;
+      --accent: #0077cc;
+    }
+    .dark {
+      --bg: #1e1e2e;
+      --text: #e0e0e0;
+      --sidebar: #2e2e3e;
+      --accent: #66aaff;
+    }
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid #ccc;
+    }
+    header h1 { margin: 0; font-size: 1.5em; }
+    .controls {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .container { display: flex; height: calc(100vh - 60px); }
+    .sidebar {
+      width: 250px;
+      background: var(--sidebar);
+      padding: 10px;
+      overflow-y: auto;
+      font-size: 0.95em;
+    }
+    .sidebar details { margin-bottom: 6px; }
+    .sidebar summary {
+      cursor: pointer;
+      padding: 4px;
+      font-weight: bold;
+      color: var(--accent);
+    }
+    .sidebar button {
+      display: block;
+      width: 100%;
+      margin: 2px 0;
+      padding: 4px 6px;
+      border: none;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    .sidebar button.active {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 4px;
+    }
+    .reader {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .reader mark { background: yellow; }
+    .reader mark.active { background: orange; }
+    button { padding: 6px 10px; cursor: pointer; }
+    input[type="text"] { padding: 6px 8px; }
+    #matchCounter {
+      font-size: 0.9em;
+      color: var(--text);
+      min-width: 70px;
+      text-align: center;
+    }
+    /* Navigation buttons inside reader */
+    .nav-buttons {
+      display: flex;
+      justify-content: space-between;
+      margin: 20px 0;
+      padding: 10px 0;
+      border-top: 1px solid #ccc;
+      border-bottom: 1px solid #ccc;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MANI DEMO BOOK</h1>
+    <div class="controls">
+      <button id="decFont">A-</button>
+      <button id="incFont">A+</button>
+      <button id="toggleTheme">Toggle Theme</button>
+      <input type="text" id="searchBox" placeholder="Search…">
+      <button id="prevMatch">⬅ Prev</button>
+      <span id="matchCounter">0 of 0</span>
+      <button id="nextMatch">Next ➡</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <aside class="sidebar" id="toc"></aside>
+    <main class="reader" id="content"></main>
+  </div>
+
+  <script>
+    // Example data structure: Book -> Chapter -> Verse
+    const BOOK = {
+      "HOMILETICS": {
+        "1": {
+          "1": "Words & definition-Illustration",
+          "2": "1.” Homily” = discourse,conversation.<br> 2.”  Homes”=  is a saying.<br> 3.” Homiles” =An assembly, a crowd.",
+          "3": "1.“HOMILETICS” is the science and art of preaching...<br>2. Augustine introduced the terms “Homilia” and “Sermo”.",
+          "4": "Working test"
+        },
+        "2": {
+          "1": "Thus the heavens and the earth were finished...",
+          "2": "And on the seventh day God ended his work..."
+        }
+      },
+      "THEOLOGY PROPER": {
+        "1": {
+          "1": "Now these are the names of the children of Israel...",
+          "2": "Reuben, Simeon, Levi, and Judah..."
+        }
+      }
+    };
+
+    const devotionalText = `
+      <p><strong>-Trees contain a field</strong><br>
+      Tuesday 2nd Sep-2025 – TEST<br>
+      <em>Called to Overcome</em><br>
+      Trees contain a field<br><br>
+      <strong>SARMIMANI</p>
+    `;
+
+    let state = {
+      fontSize: 16,
+      dark: false,
+      matches: [],
+      currentMatchIndex: -1,
+      currentBook: null,
+      currentChapter: null,
+      currentVerse: null
+    };
+
+    function init() {
+      renderSidebar();
+      setupControls();
+    }
+
+    // -------- Sidebar Tree Navigation --------
+    function renderSidebar() {
+      const toc = document.getElementById('toc');
+      toc.innerHTML = '';
+      Object.keys(BOOK).forEach(book => {
+        const bookDetails = document.createElement('details');
+        const bookSummary = document.createElement('summary');
+        bookSummary.textContent = book;
+        bookDetails.appendChild(bookSummary);
+
+        Object.keys(BOOK[book]).forEach(ch => {
+          const chDetails = document.createElement('details');
+          const chSummary = document.createElement('summary');
+          chSummary.textContent = "Chapter " + ch;
+          chDetails.appendChild(chSummary);
+
+          Object.keys(BOOK[book][ch]).forEach(v => {
+            const btn = document.createElement('button');
+            btn.textContent = "Verse " + v;
+            btn.onclick = () => {
+              state.currentBook = book;
+              state.currentChapter = ch;
+              state.currentVerse = v;
+              renderChapter(book, ch, v);
+              highlightActiveVerse(v);
+            };
+            chDetails.appendChild(btn);
+          });
+
+          bookDetails.appendChild(chDetails);
+        });
+        toc.appendChild(bookDetails);
+      });
+    }
+
+    // -------- Render Chapter Content --------
+    function renderChapter(book, chapter, scrollToVerseNum=null) {
+      const content = document.getElementById('content');
+      let html = `<h2>${book} - Chapter ${chapter}</h2>`;
+
+      // Add navigation buttons (Prev / Next)
+      html += `<div class="nav-buttons">
+        <button onclick="prevChapter()">⬅ Prev Chapter</button>
+        <button onclick="nextChapter()">Next Chapter ➡</button>
+        <button onclick="prevVerse()">⬅ Prev Verse</button>
+        <button onclick="nextVerse()">Next Verse ➡</button>
+      </div>`;
+
+      Object.keys(BOOK[book][chapter]).forEach(v => {
+        html += `<h4 id="verse-${v}">Verse ${v}</h4><p>${BOOK[book][chapter][v]}</p>`;
+      });
+
+      if (book === "HOMILETICS" && chapter === "1") {
+        html += devotionalText;
+      }
+
+      // Add navigation buttons again at bottom
+      html += `<div class="nav-buttons">
+        <button onclick="prevChapter()">⬅ Prev Chapter</button>
+        <button onclick="nextChapter()">Next Chapter ➡</button>
+        <button onclick="prevVerse()">⬅ Prev Verse</button>
+        <button onclick="nextVerse()">Next Verse ➡</button>
+      </div>`;
+
+      content.innerHTML = html;
+      content.style.fontSize = state.fontSize + 'px';
+
+      if (scrollToVerseNum) {
+        const verseEl = document.getElementById(`verse-${scrollToVerseNum}`);
+        if (verseEl) verseEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    // -------- Chapter Navigation --------
+    function nextChapter() {
+      const books = Object.keys(BOOK);
+      const bIndex = books.indexOf(state.currentBook);
+      const chapters = Object.keys(BOOK[state.currentBook]);
+      const cIndex = chapters.indexOf(state.currentChapter);
+
+      if (cIndex < chapters.length - 1) {
+        state.currentChapter = chapters[cIndex + 1];
+      } else if (bIndex < books.length - 1) {
+        state.currentBook = books[bIndex + 1];
+        state.currentChapter = Object.keys(BOOK[state.currentBook])[0];
+      }
+      state.currentVerse = null;
+      renderChapter(state.currentBook, state.currentChapter);
+    }
+
+    function prevChapter() {
+      const books = Object.keys(BOOK);
+      const bIndex = books.indexOf(state.currentBook);
+      const chapters = Object.keys(BOOK[state.currentBook]);
+      const cIndex = chapters.indexOf(state.currentChapter);
+
+      if (cIndex > 0) {
+        state.currentChapter = chapters[cIndex - 1];
+      } else if (bIndex > 0) {
+        state.currentBook = books[bIndex - 1];
+        const prevChapters = Object.keys(BOOK[state.currentBook]);
+        state.currentChapter = prevChapters[prevChapters.length - 1];
+      }
+      state.currentVerse = null;
+      renderChapter(state.currentBook, state.currentChapter);
+    }
+
+    // -------- Verse Navigation --------
+    function nextVerse() {
+      const verses = Object.keys(BOOK[state.currentBook][state.currentChapter]);
+      let vIndex = verses.indexOf(state.currentVerse);
+      if (vIndex < verses.length - 1) {
+        state.currentVerse = verses[vIndex + 1];
+      } else {
+        nextChapter();
+        state.currentVerse = Object.keys(BOOK[state.currentBook][state.currentChapter])[0];
+      }
+      renderChapter(state.currentBook, state.currentChapter, state.currentVerse);
+      highlightActiveVerse(state.currentVerse);
+    }
+
+    function prevVerse() {
+      const verses = Object.keys(BOOK[state.currentBook][state.currentChapter]);
+      let vIndex = verses.indexOf(state.currentVerse);
+      if (vIndex > 0) {
+        state.currentVerse = verses[vIndex - 1];
+      } else {
+        prevChapter();
+        const prevVerses = Object.keys(BOOK[state.currentBook][state.currentChapter]);
+        state.currentVerse = prevVerses[prevVerses.length - 1];
+      }
+      renderChapter(state.currentBook, state.currentChapter, state.currentVerse);
+      highlightActiveVerse(state.currentVerse);
+    }
+
+    // -------- Highlight active verse in sidebar --------
+    function highlightActiveVerse(v) {
+      document.querySelectorAll('.sidebar button').forEach(btn => btn.classList.remove('active'));
+      const btns = Array.from(document.querySelectorAll('.sidebar button'));
+      const target = btns.find(b => b.textContent.includes(`Verse ${v}`));
+      if (target) target.classList.add('active');
+    }
+
+    // -------- Controls (font, theme, search) --------
+    function setupControls() {
+      document.getElementById('incFont').onclick = () => {
+        state.fontSize += 2;
+        if (state.currentBook && state.currentChapter) {
+          renderChapter(state.currentBook, state.currentChapter, state.currentVerse);
+        }
+      };
+      document.getElementById('decFont').onclick = () => {
+        state.fontSize = Math.max(12, state.fontSize - 2);
+        if (state.currentBook && state.currentChapter) {
+          renderChapter(state.currentBook, state.currentChapter, state.currentVerse);
+        }
+      };
+      document.getElementById('toggleTheme').onclick = () => {
+        state.dark = !state.dark;
+        document.body.classList.toggle('dark', state.dark);
+      };
+
+      const searchBox = document.getElementById('searchBox');
+      searchBox.addEventListener('input', e => search(e.target.value));
+      searchBox.addEventListener('keydown', e => {
+        if (e.key === 'Enter') navigateMatch(1);
+      });
+
+      document.getElementById('prevMatch').onclick = () => navigateMatch(-1);
+      document.getElementById('nextMatch').onclick = () => navigateMatch(1);
+    }
+
+    // -------- Search --------
+    function search(query) {
+      if (!state.currentBook || !state.currentChapter) return;
+      renderChapter(state.currentBook, state.currentChapter, state.currentVerse);
+
+      state.matches = [];
+      state.currentMatchIndex = -1;
+      updateCounter();
+
+      if (!query) return;
+
+      const content = document.getElementById('content');
+      const re = new RegExp(query, 'gi');
+      content.innerHTML = content.innerHTML.replace(re, match => `<mark>${match}</mark>`);
+
+      state.matches = Array.from(content.querySelectorAll('mark'));
+      if (state.matches.length > 0) {
+        state.currentMatchIndex = 0;
+        highlightCurrentMatch();
+      }
+    }
+
+    function highlightCurrentMatch() {
+      state.matches.forEach(m => m.classList.remove('active'));
+      if (state.currentMatchIndex >= 0 && state.currentMatchIndex < state.matches.length) {
+        const current = state.matches[state.currentMatchIndex];
+        current.classList.add('active');
+        current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      updateCounter();
+    }
+
+    function navigateMatch(direction) {
+      if (state.matches.length === 0) return;
+      state.currentMatchIndex += direction;
+      if (state.currentMatchIndex < 0) state.currentMatchIndex = state.matches.length - 1;
+      if (state.currentMatchIndex >= state.matches.length) state.currentMatchIndex = 0;
+      highlightCurrentMatch();
+    }
+
+    function updateCounter() {
+      const counter = document.getElementById('matchCounter');
+      if (state.matches.length === 0) {
+        counter.textContent = "0 of 0";
+      } else {
+        counter.textContent = `${state.currentMatchIndex + 1} of ${state.matches.length}`;
+      }
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
